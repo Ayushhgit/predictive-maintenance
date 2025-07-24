@@ -1,0 +1,88 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environment
+venv/
+env/
+.venv/
+ENV/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Hidden system files
+.DS_Store
+Thumbs.db
+
+# VSCode settings (optional)
+.vscode/
+
+# Python environment files
+*.egg-info/
+*.egg
+.eggs/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Model artifacts
+*.h5
+*.hdf5
+*.pth
+*.pt
+*.joblib
+*.pkl
+*.sav
+*.tflite
+
+# TensorBoard logs
+logs/
+runs/
+events.out.tfevents.*
+
+# Dataset files (optional, comment out if you want to track small sample data)
+data/
+datasets/
+*.csv
+*.zip
+*.tar.gz
+
+# Output folders
+output/
+results/
+checkpoints/
+models/
+inference/
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+
+# Test and coverage files
+htmlcov/
+.tox/
+.nox/
+.coverage
+coverage.xml
+*.cover
+.cache
+.pytest_cache/
+
+# Jupyter Notebook outputs
+*.nbconvert.ipynb
+
+# Environment config
+.env
+.env.*
+
+# PyCharm
+.idea/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+
+# Pyre
+.pyre/
