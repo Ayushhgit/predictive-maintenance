@@ -11,7 +11,7 @@ mongodb:
   uri: "mongodb://localhost:27017/"
   database_name: "maintenance"
   raw_data_files:
-    train: "train_FD001.txt" # Using FD001 as the primary dataset for this config
+    train: "train_FD001.txt"
     test: "test_FD001.txt"
     rul: "RUL_FD001.txt"
 
