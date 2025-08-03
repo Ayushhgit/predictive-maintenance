@@ -5,10 +5,8 @@ import pathlib
 def read_yaml(path_to_yaml: str) -> dict:
     """
     Reads a YAML file and returns the content as a Python dictionary.
-
     Args:
         path_to_yaml (str): Path to the YAML file.
-
     Returns:
         dict: Parsed YAML content.
     """
@@ -23,7 +21,6 @@ def read_yaml(path_to_yaml: str) -> dict:
 def create_directories(paths: list):
     """
     Creates directories from a list of paths if they do not exist.
-
     Args:
         paths (list): List of directory paths to create.
     """
