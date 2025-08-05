@@ -23,6 +23,11 @@ class DataValidation:
         try:
             config = load_yaml(CONFIG_FILE_PATH)
             schema = load_yaml(SCHEMA_FILE_PATH)
+            
+            # Debug: Print the schema structure
+            logger.info(f"Loaded schema structure: {schema}")
+            logger.info(f"Schema keys: {list(schema.keys()) if isinstance(schema, dict) else 'Not a dictionary'}")
+            
             return DataValidationConfig(
                 validated_data_path=f"{config['data']['validated_data_path']}validated_data.csv",
                 schema=schema
@@ -36,8 +41,39 @@ class DataValidation:
         Validates if all required columns are present in the DataFrame.
         """
         try:
-            required_columns = set(self.config.schema['columns'].keys())
+            # Debug: Print what we're working with
+            logger.info(f"Schema type: {type(self.config.schema)}")
+            logger.info(f"Schema content: {self.config.schema}")
+            
+            # Handle different possible schema structures
+            required_columns = None
+            
+            if 'columns' in self.config.schema:
+                if isinstance(self.config.schema['columns'], list):
+                    required_columns = set(self.config.schema['columns'])
+                    logger.info("Using list format for columns")
+                elif isinstance(self.config.schema['columns'], dict):
+                    required_columns = set(self.config.schema['columns'].keys())
+                    logger.info("Using dictionary format for columns")
+                else:
+                    logger.error(f"Unexpected columns format: {type(self.config.schema['columns'])}")
+                    return False
+            elif 'schema' in self.config.schema and 'columns' in self.config.schema['schema']:
+                # Handle nested schema structure
+                columns_data = self.config.schema['schema']['columns']
+                if isinstance(columns_data, list):
+                    required_columns = set(columns_data)
+                    logger.info("Using nested list format for columns")
+                elif isinstance(columns_data, dict):
+                    required_columns = set(columns_data.keys())
+                    logger.info("Using nested dictionary format for columns")
+            else:
+                logger.error(f"Could not find 'columns' in schema. Available keys: {list(self.config.schema.keys())}")
+                return False
+            
             actual_columns = set(df.columns)
+            logger.info(f"Required columns: {required_columns}")
+            logger.info(f"Actual columns: {actual_columns}")
 
             missing_columns = required_columns - actual_columns
             if missing_columns:
@@ -53,6 +89,8 @@ class DataValidation:
         
         except Exception as e:
             logger.error(f"Error validating columns: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             return False
         
     def validate_data_types(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -62,20 +100,35 @@ class DataValidation:
         try:
             logger.info("Validating and correcting data types...")
             
-            for column, specs in self.config.schema['columns'].items():
-                if column in df.columns:
-                    expected_dtype = specs['dtype']
-                    
-                    if expected_dtype == 'datetime64[ns]':
-                        # Convert to datetime, coercing invalid dates to NaT
-                        df[column] = pd.to_datetime(df[column], errors='coerce')
-                    elif expected_dtype == 'float64':
-                        df[column] = pd.to_numeric(df[column], errors='coerce').astype(float)
-                    elif expected_dtype == 'int64':
-                        # Use 'Int64' (nullable integer) for columns that might have NaNs after coercion
-                        df[column] = pd.to_numeric(df[column], errors='coerce').astype('Int64')
-                    elif expected_dtype == 'object':
-                        df[column] = df[column].astype(str)
+            # Get column specifications
+            columns_spec = None
+            if 'columns' in self.config.schema:
+                columns_spec = self.config.schema['columns']
+            elif 'schema' in self.config.schema and 'columns' in self.config.schema['schema']:
+                columns_spec = self.config.schema['schema']['columns']
+            
+            # Check if schema has column specifications (dictionary format)
+            if isinstance(columns_spec, dict):
+                for column, specs in columns_spec.items():
+                    if column in df.columns and isinstance(specs, dict) and 'dtype' in specs:
+                        expected_dtype = specs['dtype']
+                        
+                        if expected_dtype == 'datetime64[ns]':
+                            df[column] = pd.to_datetime(df[column], errors='coerce')
+                        elif expected_dtype == 'float64':
+                            df[column] = pd.to_numeric(df[column], errors='coerce').astype(float)
+                        elif expected_dtype == 'int64':
+                            df[column] = pd.to_numeric(df[column], errors='coerce').astype('Int64')
+                        elif expected_dtype == 'object':
+                            df[column] = df[column].astype(str)
+            else:
+                # If columns is a list, apply default data type inference
+                logger.info("Schema columns is a list format. Applying default data type inference.")
+                for col in df.columns:
+                    if col.startswith('sensor_') or col.startswith('op_setting_'):
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                    elif col in ['unit_number', 'time_in_cycles']:
+                        df[col] = pd.to_numeric(df[col], errors='coerce').astype('Int64')
             
             logger.info("Data types validated and corrected.")
             return df
@@ -91,16 +144,28 @@ class DataValidation:
         try:
             logger.info("Validating data ranges and handling outliers...")
             
-            for column, specs in self.config.schema['columns'].items():
-                if column in df.columns and 'range' in specs and pd.api.types.is_numeric_dtype(df[column]):
-                    min_val, max_val = specs['range']
-                    
-                    out_of_range_mask = (df[column] < min_val) | (df[column] > max_val)
-                    num_outliers = out_of_range_mask.sum()
-                    
-                    if num_outliers > 0:
-                        logger.warning(f"Found {num_outliers} outliers in column '{column}'. Capping values to range [{min_val}, {max_val}].")
-                        df[column] = df[column].clip(lower=min_val, upper=max_val)
+            # Get column specifications
+            columns_spec = None
+            if 'columns' in self.config.schema:
+                columns_spec = self.config.schema['columns']
+            elif 'schema' in self.config.schema and 'columns' in self.config.schema['schema']:
+                columns_spec = self.config.schema['schema']['columns']
+            
+            # Check if schema has column specifications (dictionary format)
+            if isinstance(columns_spec, dict):
+                for column, specs in columns_spec.items():
+                    if (column in df.columns and isinstance(specs, dict) and 
+                        'range' in specs and pd.api.types.is_numeric_dtype(df[column])):
+                        min_val, max_val = specs['range']
+                        
+                        out_of_range_mask = (df[column] < min_val) | (df[column] > max_val)
+                        num_outliers = out_of_range_mask.sum()
+                        
+                        if num_outliers > 0:
+                            logger.warning(f"Found {num_outliers} outliers in column '{column}'. Capping values to range [{min_val}, {max_val}].")
+                            df[column] = df[column].clip(lower=min_val, upper=max_val)
+            else:
+                logger.info("Schema columns is a list format. Skipping range validation.")
             
             logger.info("Data ranges validated and outliers capped.")
             return df
@@ -121,9 +186,34 @@ class DataValidation:
             if not missing_cols_before.empty:
                 logger.info(f"Missing values before handling:\\n{missing_cols_before}")
             
-            # Use forward-fill and backward-fill, grouped by equipment, to maintain time series integrity
-            df = df.groupby('equipment_id').ffill()
-            df = df.groupby('equipment_id').bfill()
+            # Check if unit_number column exists for grouping
+            if 'unit_number' in df.columns:
+                logger.info(f"unit_number column dtype: {df['unit_number'].dtype}")
+                logger.info(f"unit_number has NaN values: {df['unit_number'].isnull().any()}")
+                
+                # Handle nullable integer types that might cause groupby issues
+                if df['unit_number'].dtype == 'Int64':
+                    # Convert to regular int if no NaN values, otherwise handle NaNs first
+                    if not df['unit_number'].isnull().any():
+                        df['unit_number'] = df['unit_number'].astype('int64')
+                    else:
+                        # Fill NaN values in unit_number before groupby
+                        df['unit_number'] = df['unit_number'].fillna(df['unit_number'].mode()[0] if not df['unit_number'].mode().empty else 1)
+                        df['unit_number'] = df['unit_number'].astype('int64')
+                
+                # Perform groupby operations
+                try:
+                    df = df.groupby('unit_number').ffill()
+                    df = df.groupby('unit_number').bfill()
+                    logger.info("Successfully applied grouped forward-fill and backward-fill.")
+                except Exception as groupby_error:
+                    logger.warning(f"Groupby operation failed: {groupby_error}. Using simple ffill/bfill without grouping.")
+                    df = df.ffill()
+                    df = df.bfill()
+            else:
+                logger.warning("unit_number column not found. Using simple ffill/bfill without grouping.")
+                df = df.ffill()
+                df = df.bfill()
             
             # For any remaining NaNs, fill with mean or mode
             for col in df.columns:
@@ -142,6 +232,8 @@ class DataValidation:
             
         except Exception as e:
             logger.error(f"Error handling missing values: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             raise e
     
     def save_validated_data(self, df: pd.DataFrame, output_path: str) -> str:
@@ -149,23 +241,17 @@ class DataValidation:
         Saves the validated DataFrame to the specified path with enhanced error handling.
         """
         try:
-            # Convert to pathlib.Path for better path handling
             validated_file_path = pathlib.Path(output_path)
-            
-            # Create directory structure if it doesn't exist
             validated_file_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Verify directory was created and is writable
             if not validated_file_path.parent.exists():
                 raise IOError(f"Could not create directory: {validated_file_path.parent}")
             
             if not os.access(validated_file_path.parent, os.W_OK):
                 raise IOError(f"Directory is not writable: {validated_file_path.parent}")
             
-            # Save the CSV file
             logger.info(f"Saving validated data to: {validated_file_path}")
             
-            # Use pandas to_csv directly with error handling as fallback
             try:
                 save_csv(df, str(validated_file_path))
                 logger.info(f"Successfully saved using save_csv utility function.")
@@ -174,7 +260,6 @@ class DataValidation:
                 df.to_csv(validated_file_path, index=False)
                 logger.info(f"Successfully saved using pandas to_csv fallback.")
             
-            # Verify the file was actually created and has content
             if not validated_file_path.exists():
                 raise IOError(f"File was not created: {validated_file_path}")
             
@@ -199,15 +284,32 @@ class DataValidation:
             # Load raw data
             df = load_csv(raw_data_path)
             logger.info(f"Loaded {len(df)} records for validation from {raw_data_path}.")
+            logger.info(f"DataFrame columns: {list(df.columns)}")
             
             # 1. Validate columns
             if not self.validate_columns(df):
                 logger.error("Data validation failed: Missing required columns.")
                 raise ValueError("Missing required columns in raw data.")
             
-            # Drop extra columns to ensure a clean, consistent schema
-            required_columns = set(self.config.schema['columns'].keys())
-            df = df[list(required_columns)]
+            # Drop extra columns to ensure a clean, consistent schema while preserving order
+            required_columns_ordered = None
+            if 'columns' in self.config.schema:
+                if isinstance(self.config.schema['columns'], list):
+                    required_columns_ordered = self.config.schema['columns']
+                else:
+                    required_columns_ordered = list(self.config.schema['columns'].keys())
+            elif 'schema' in self.config.schema and 'columns' in self.config.schema['schema']:
+                columns_data = self.config.schema['schema']['columns']
+                if isinstance(columns_data, list):
+                    required_columns_ordered = columns_data
+                else:
+                    required_columns_ordered = list(columns_data.keys())
+            
+            if required_columns_ordered:
+                # Filter to only include columns that exist in the DataFrame, preserving order
+                existing_columns = [col for col in required_columns_ordered if col in df.columns]
+                df = df[existing_columns]
+                logger.info(f"Reordered DataFrame columns to match schema: {existing_columns}")
 
             # 2. Validate and correct data types
             df = self.validate_data_types(df)
