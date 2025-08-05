@@ -2,6 +2,7 @@
 data:
   raw_data_path: "data/raw/"
   transformed_data_path: "data/transformed/"
+  validated_data_path: "data/validated/"
   train_file: data/source/train_FD001.txt
   test_file: data/source/test_FD001.txt
   rul_file: data/source/RUL_FD001.txt

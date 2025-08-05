@@ -3,3 +3,4 @@ numpy
 ipykernal
 pymongo
 pyyaml
+dotenv
