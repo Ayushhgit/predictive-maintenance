@@ -36,8 +36,8 @@ def load_pickle(file_path:str) -> Any:
     
 def save_pickle(obj: Any, file_path: str):
     try:
-        with open(file_path, 'rb') as file:
-            return pickle.load(file)
+        with open(file_path, 'wb') as file:
+            return pickle.dump(obj, file)
     except Exception as e:
         logger.error(f"Error loading pickle file {file_path}: {e}")
         raise e

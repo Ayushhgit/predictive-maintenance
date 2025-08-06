@@ -21,7 +21,8 @@ mlflow:
 model:
   target_column: "RUL"
   test_size: 0.2
-  train_size: 42
+  train_size: 0.8
+  random_state: 42
 
   lstm:
   sequence_length: 50

@@ -35,12 +35,38 @@ class DataValidation:
         except Exception as e:
             logger.error(f"Error loading data validation config: {e}")
             raise e
+
+    def debug_columns_at_each_step(self, df: pd.DataFrame, step_name: str):
+        """Debug helper to track columns at each step"""
+        logger.info(f"=== STEP: {step_name} ===")
+        logger.info(f"DataFrame shape: {df.shape}")
+        logger.info(f"Columns ({len(df.columns)}): {list(df.columns)}")
+        
+        # Check specifically for unit-related columns
+        unit_cols = [col for col in df.columns if 'unit' in col.lower()]
+        if unit_cols:
+            logger.info(f"Unit-related columns found: {unit_cols}")
+            for col in unit_cols:
+                logger.info(f"  {col}: unique values = {df[col].nunique()}")
+        else:
+            logger.warning("NO unit-related columns found!")
+        
+        # Check for time-related columns
+        time_cols = [col for col in df.columns if any(word in col.lower() for word in ['time', 'cycle'])]
+        if time_cols:
+            logger.info(f"Time-related columns found: {time_cols}")
+        else:
+            logger.warning("NO time-related columns found!")
+        
+        logger.info("=" * (len(step_name) + 12))
         
     def validate_columns(self, df: pd.DataFrame) -> bool:
         """
         Validates if all required columns are present in the DataFrame.
         """
         try:
+            self.debug_columns_at_each_step(df, "BEFORE COLUMN VALIDATION")
+            
             # Debug: Print what we're working with
             logger.info(f"Schema type: {type(self.config.schema)}")
             logger.info(f"Schema content: {self.config.schema}")
@@ -71,8 +97,32 @@ class DataValidation:
                 logger.error(f"Could not find 'columns' in schema. Available keys: {list(self.config.schema.keys())}")
                 return False
             
+            logger.info(f"Original required columns from schema: {required_columns}")
+            
+            # FORCE ADD unit_number if it exists in DataFrame
             actual_columns = set(df.columns)
-            logger.info(f"Required columns: {required_columns}")
+            if 'unit_number' in actual_columns:
+                logger.info("FORCING unit_number to be included in required columns")
+                required_columns.add('unit_number')
+            
+            if 'time_in_cycles' in actual_columns:
+                logger.info("FORCING time_in_cycles to be included in required columns")
+                required_columns.add('time_in_cycles')
+            
+            # Also check for alternative columns
+            unit_identifier_alternatives = {'unit', 'unit_id', 'engine_id', 'id'}
+            for alt_col in unit_identifier_alternatives:
+                if alt_col in actual_columns:
+                    required_columns.add(alt_col)
+                    logger.info(f"Added alternative unit identifier to schema: {alt_col}")
+            
+            time_identifier_alternatives = {'cycle', 'time', 'cycles', 'time_cycle'}
+            for alt_col in time_identifier_alternatives:
+                if alt_col in actual_columns:
+                    required_columns.add(alt_col)
+                    logger.info(f"Added alternative time identifier to schema: {alt_col}")
+            
+            logger.info(f"Final required columns: {required_columns}")
             logger.info(f"Actual columns: {actual_columns}")
 
             missing_columns = required_columns - actual_columns
@@ -82,7 +132,7 @@ class DataValidation:
             
             extra_columns = actual_columns - required_columns
             if extra_columns:
-                logger.warning(f"Found extra columns: {extra_columns}. These will be dropped.")
+                logger.warning(f"Found extra columns that will be kept: {extra_columns}")
             
             logger.info("All required columns are present.")
             return True
@@ -98,6 +148,8 @@ class DataValidation:
         Validates and corrects data types based on the schema.
         """
         try:
+            self.debug_columns_at_each_step(df, "BEFORE DATA TYPE VALIDATION")
+            
             logger.info("Validating and correcting data types...")
             
             # Get column specifications
@@ -112,6 +164,7 @@ class DataValidation:
                 for column, specs in columns_spec.items():
                     if column in df.columns and isinstance(specs, dict) and 'dtype' in specs:
                         expected_dtype = specs['dtype']
+                        logger.info(f"Converting {column} to {expected_dtype}")
                         
                         if expected_dtype == 'datetime64[ns]':
                             df[column] = pd.to_datetime(df[column], errors='coerce')
@@ -126,10 +179,13 @@ class DataValidation:
                 logger.info("Schema columns is a list format. Applying default data type inference.")
                 for col in df.columns:
                     if col.startswith('sensor_') or col.startswith('op_setting_'):
+                        logger.info(f"Converting sensor/op_setting column {col} to numeric")
                         df[col] = pd.to_numeric(df[col], errors='coerce')
-                    elif col in ['unit_number', 'time_in_cycles']:
+                    elif col in ['unit_number', 'time_in_cycles', 'unit', 'unit_id', 'engine_id', 'id', 'cycle', 'time', 'cycles']:
+                        logger.info(f"Converting identifier column {col} to Int64")
                         df[col] = pd.to_numeric(df[col], errors='coerce').astype('Int64')
             
+            self.debug_columns_at_each_step(df, "AFTER DATA TYPE VALIDATION")
             logger.info("Data types validated and corrected.")
             return df
             
@@ -142,6 +198,8 @@ class DataValidation:
         Validates data ranges and caps outliers to the defined range.
         """
         try:
+            self.debug_columns_at_each_step(df, "BEFORE RANGE VALIDATION")
+            
             logger.info("Validating data ranges and handling outliers...")
             
             # Get column specifications
@@ -167,6 +225,7 @@ class DataValidation:
             else:
                 logger.info("Schema columns is a list format. Skipping range validation.")
             
+            self.debug_columns_at_each_step(df, "AFTER RANGE VALIDATION")
             logger.info("Data ranges validated and outliers capped.")
             return df
             
@@ -179,6 +238,8 @@ class DataValidation:
         Handles missing values using a forward-fill and backward-fill strategy for time-series data.
         """
         try:
+            self.debug_columns_at_each_step(df, "BEFORE MISSING VALUE HANDLING")
+            
             logger.info("Handling missing values...")
             
             missing_before = df.isnull().sum()
@@ -186,32 +247,25 @@ class DataValidation:
             if not missing_cols_before.empty:
                 logger.info(f"Missing values before handling:\\n{missing_cols_before}")
             
-            # Check if unit_number column exists for grouping
-            if 'unit_number' in df.columns:
-                logger.info(f"unit_number column dtype: {df['unit_number'].dtype}")
-                logger.info(f"unit_number has NaN values: {df['unit_number'].isnull().any()}")
+            # Find unit identifier column
+            unit_col = None
+            possible_unit_names = ['unit_number', 'unit', 'unit_id', 'engine_id', 'id']
+            for col_name in possible_unit_names:
+                if col_name in df.columns:
+                    unit_col = col_name
+                    logger.info(f"Using unit identifier column: {unit_col}")
+                    break
+            
+            if unit_col is not None:
+                logger.info(f"{unit_col} column dtype: {df[unit_col].dtype}")
+                logger.info(f"{unit_col} has NaN values: {df[unit_col].isnull().any()}")
                 
-                # Handle nullable integer types that might cause groupby issues
-                if df['unit_number'].dtype == 'Int64':
-                    # Convert to regular int if no NaN values, otherwise handle NaNs first
-                    if not df['unit_number'].isnull().any():
-                        df['unit_number'] = df['unit_number'].astype('int64')
-                    else:
-                        # Fill NaN values in unit_number before groupby
-                        df['unit_number'] = df['unit_number'].fillna(df['unit_number'].mode()[0] if not df['unit_number'].mode().empty else 1)
-                        df['unit_number'] = df['unit_number'].astype('int64')
-                
-                # Perform groupby operations
-                try:
-                    df = df.groupby('unit_number').ffill()
-                    df = df.groupby('unit_number').bfill()
-                    logger.info("Successfully applied grouped forward-fill and backward-fill.")
-                except Exception as groupby_error:
-                    logger.warning(f"Groupby operation failed: {groupby_error}. Using simple ffill/bfill without grouping.")
-                    df = df.ffill()
-                    df = df.bfill()
+                # SIMPLE FIX: Skip groupby entirely to avoid losing the unit column
+                logger.info("Using simple ffill/bfill to avoid groupby issues with unit column")
+                df = df.ffill()
+                df = df.bfill()
             else:
-                logger.warning("unit_number column not found. Using simple ffill/bfill without grouping.")
+                logger.warning("Unit identifier column not found. Using simple ffill/bfill without grouping.")
                 df = df.ffill()
                 df = df.bfill()
             
@@ -227,6 +281,7 @@ class DataValidation:
                         df[col] = df[col].fillna(fill_value)
                         logger.warning(f"Column '{col}' had remaining NaNs, filled with mode: {fill_value}.")
 
+            self.debug_columns_at_each_step(df, "AFTER MISSING VALUE HANDLING")
             logger.info("All missing values have been handled.")
             return df
             
@@ -241,6 +296,8 @@ class DataValidation:
         Saves the validated DataFrame to the specified path with enhanced error handling.
         """
         try:
+            self.debug_columns_at_each_step(df, "BEFORE SAVING")
+            
             validated_file_path = pathlib.Path(output_path)
             validated_file_path.parent.mkdir(parents=True, exist_ok=True)
             
@@ -267,6 +324,21 @@ class DataValidation:
             if file_size == 0:
                 raise IOError(f"File was created but is empty: {validated_file_path}")
             
+            # VERIFY THE SAVED FILE
+            logger.info("VERIFYING SAVED FILE...")
+            try:
+                saved_df = pd.read_csv(validated_file_path)
+                logger.info(f"Saved file shape: {saved_df.shape}")
+                logger.info(f"Saved file columns: {list(saved_df.columns)}")
+                
+                if 'unit_number' in saved_df.columns:
+                    logger.info(f"✓ unit_number successfully saved! Unique units: {saved_df['unit_number'].nunique()}")
+                else:
+                    logger.error("✗ unit_number NOT found in saved file!")
+                    
+            except Exception as verify_error:
+                logger.error(f"Error verifying saved file: {verify_error}")
+            
             logger.info(f"Validated data successfully saved to {validated_file_path} (Size: {file_size} bytes)")
             return str(validated_file_path)
             
@@ -284,33 +356,18 @@ class DataValidation:
             # Load raw data
             df = load_csv(raw_data_path)
             logger.info(f"Loaded {len(df)} records for validation from {raw_data_path}.")
-            logger.info(f"DataFrame columns: {list(df.columns)}")
+            
+            self.debug_columns_at_each_step(df, "RAW DATA LOADED")
             
             # 1. Validate columns
             if not self.validate_columns(df):
                 logger.error("Data validation failed: Missing required columns.")
                 raise ValueError("Missing required columns in raw data.")
             
-            # Drop extra columns to ensure a clean, consistent schema while preserving order
-            required_columns_ordered = None
-            if 'columns' in self.config.schema:
-                if isinstance(self.config.schema['columns'], list):
-                    required_columns_ordered = self.config.schema['columns']
-                else:
-                    required_columns_ordered = list(self.config.schema['columns'].keys())
-            elif 'schema' in self.config.schema and 'columns' in self.config.schema['schema']:
-                columns_data = self.config.schema['schema']['columns']
-                if isinstance(columns_data, list):
-                    required_columns_ordered = columns_data
-                else:
-                    required_columns_ordered = list(columns_data.keys())
+            # CRITICAL CHANGE: DO NOT FILTER COLUMNS AT ALL
+            # Comment out the column filtering logic completely
+            logger.info("SKIPPING COLUMN FILTERING - PRESERVING ALL COLUMNS")
             
-            if required_columns_ordered:
-                # Filter to only include columns that exist in the DataFrame, preserving order
-                existing_columns = [col for col in required_columns_ordered if col in df.columns]
-                df = df[existing_columns]
-                logger.info(f"Reordered DataFrame columns to match schema: {existing_columns}")
-
             # 2. Validate and correct data types
             df = self.validate_data_types(df)
             
@@ -320,7 +377,14 @@ class DataValidation:
             # 4. Handle missing values
             df = self.handle_missing_values(df)
             
-            # 5. Save validated data with enhanced error handling
+            # Final verification before saving
+            if 'unit_number' in df.columns:
+                logger.info(f"✓ FINAL CHECK: unit_number is present with {df['unit_number'].nunique()} unique units")
+            else:
+                logger.error("✗ FINAL CHECK: unit_number is MISSING!")
+                logger.error("Available columns at end of validation:", list(df.columns))
+            
+            # 5. Save validated data
             validated_file_path = self.save_validated_data(df, self.config.validated_data_path)
             
             logger.info(f"Data validation completed successfully. Final validated dataset contains {len(df)} records.")
@@ -328,4 +392,6 @@ class DataValidation:
             
         except Exception as e:
             logger.error(f"An error occurred during the data validation pipeline: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             raise e
