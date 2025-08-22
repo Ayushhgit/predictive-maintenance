@@ -25,11 +25,11 @@ model:
   random_state: 42
 
   lstm:
-  sequence_length: 50
-  units: 100
-  dropout: 0.2
-  epochs: 20
-  batch_size: 64
+    sequence_length: 50
+    units: 128
+    dropout: 0.2
+    epochs: 50
+    batch_size: 64
 
 features:
   sensor_columns:

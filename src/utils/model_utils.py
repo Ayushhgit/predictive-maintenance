@@ -3,7 +3,8 @@ import pickle
 import json
 import yaml
 import pandas as pd
-from typing import Any, Dict
+import numpy as np
+from typing import Any, Dict, Tuple
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -58,3 +59,11 @@ def save_csv(df: pd.DataFrame, file_path: str):
     except Exception as e:
         logger.error(f"Error saving CSV file {file_path}: {e}")
         raise e
+    
+
+def create_sequences_for_regression(X_data: np.ndarray, y_data: np.ndarray, sequence_length: int) -> Tuple[np.ndarray, np.ndarray]:
+    X_seq, y_seq = [], []
+    for i in range(len(X_data) - sequence_length):
+        X_seq.append(X_data[i:(i + sequence_length), :])
+        y_seq.append(y_data[i + sequence_length])
+    return np.array(X_seq), np.array(y_seq)
