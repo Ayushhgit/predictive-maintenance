@@ -1,0 +1,79 @@
+#Data configuration
+data:
+  raw_data_path: "data/raw/"
+  transformed_data_path: "data/transformed/"
+  validated_data_path: "data/validated/"
+  train_file: data/source/train_FD001.txt
+  test_file: data/source/test_FD001.txt
+  rul_file: data/source/RUL_FD001.txt
+
+# MongoDB config
+mongodb:
+  uri: "mongodb://localhost:27017/"
+  database_name: "maintenance"
+  raw_data_files:
+    train: "train_FD001.txt"
+    test: "test_FD001.txt"
+    rul: "RUL_FD001.txt"
+
+mlflow:
+
+model:
+  target_column: "RUL"
+  test_size: 0.2
+  train_size: 0.8
+  random_state: 42
+
+  lstm:
+    sequence_length: 50
+    units: 128
+    dropout: 0.2
+    epochs: 50
+    batch_size: 64
+
+features:
+  sensor_columns:
+    - "sensor_1"
+    - "sensor_2"
+    - "sensor_3"
+    - "sensor_4"
+    - "sensor_5"
+    - "sensor_6"
+    - "sensor_7"
+    - "sensor_8"
+    - "sensor_9"
+    - "sensor_10"
+    - "sensor_11"
+    - "sensor_12"
+    - "sensor_13"
+    - "sensor_14"
+    - "sensor_15"
+    - "sensor_16"
+    - "sensor_17"
+    - "sensor_18"
+    - "sensor_19"
+    - "sensor_20"
+    - "sensor_21"
+
+  settings_columns:
+    - "op_setting_1"
+    - "op_setting_2"
+    - "op_setting_3"
+
+  # Time series features remain highly relevant
+  window_sizes: [5, 10, 20]
+  lag_features: [1, 3, 6, 12]
+
+# Artifacts
+artifacts:
+  model_dir: "artifacts/models/"
+  logs_dir: "artifacts/logs/"
+  reports_dir: "artifacts/reports/"
+  
+# Dashboard
+dashboard:
+  host: "0.0.0.0"
+  port: 8050
+  debug: true
+
+

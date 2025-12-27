@@ -1,0 +1,8 @@
+[core]
+    remote = storage
+    autostage = true
+
+[remote "storage"]
+    url = s3://predictive-maintenance-data
+    # For local development, use:
+    # url = /path/to/local/dvc-storage
